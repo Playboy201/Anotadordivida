@@ -27,7 +27,15 @@ const App: React.FC = () => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [newBusinessName, setNewBusinessName] = useState('');
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Auth states
+  const [phone, setPhone] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPin, setRegPin] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [isTrialExpired, setIsTrialExpired] = useState(false);
 
   // Interface states
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,11 +77,15 @@ const App: React.FC = () => {
     if (savedPin) handleAutoLogin(savedPin);
   }, []);
 
-  const handleAutoLogin = async (savedPin: string) => {
+  const handleAutoLogin = async (savedSession: string) => {
     setLoading(true);
     try {
-      const p = await db.getProfileByPin(savedPin);
-      if (p) setProfile(p);
+      const { phone, pin } = JSON.parse(savedSession);
+      const p = await db.login(phone, pin);
+      if (p) {
+        checkTrial(p);
+        setProfile(p);
+      }
       else localStorage.removeItem(SESSION_KEY);
     } catch (e) {
       localStorage.removeItem(SESSION_KEY);
@@ -110,33 +122,61 @@ const App: React.FC = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pin || pin.length < 4) return;
+    if (!phone || !pin || pin.length < 4) return;
     setValidating(true);
     setLoginError(null);
     try {
-      const p = await db.getProfileByPin(pin);
+      const p = await db.login(phone, pin);
       if (p) {
+        checkTrial(p);
         setProfile(p);
-        localStorage.setItem(SESSION_KEY, p.pin);
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ phone, pin }));
         setPin('');
+        setPhone('');
       } else {
-        setLoginError('PIN incorreto.');
+        setLoginError('Telefone ou PIN incorreto.');
       }
     } catch (e) {
-      setLoginError('Sem conexão.');
+      setLoginError('Erro de conexão.');
     } finally {
       setValidating(false);
     }
   };
 
+  const checkTrial = (p: Profile) => {
+    if (p.status === 'active') return;
+
+    const created = new Date(p.created_at).getTime();
+    const now = Date.now();
+    const diffDays = (now - created) / (1000 * 60 * 60 * 24);
+
+    if (diffDays > 3) {
+      setIsTrialExpired(true);
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newBusinessName.trim()) return;
+    if (!newBusinessName.trim() || !regPhone || !regPin || regPin.length < 4) return;
+
+    // Simple invite code check (hardcoded for now as requested "simple")
+    if (inviteCode !== '2025') {
+      setLoginError('Código de convite inválido.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const p = await db.createProfile(newBusinessName);
+      const exists = await db.checkPhoneExists(regPhone);
+      if (exists) {
+        setLoginError('Este número já está registado.');
+        setLoading(false);
+        return;
+      }
+
+      const p = await db.createProfile(newBusinessName, regPhone, regPin);
       setProfile(p);
-      localStorage.setItem(SESSION_KEY, p.pin);
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ phone: regPhone, pin: regPin }));
       setIsRegistering(false);
       triggerToast('Conta criada!');
     } catch (e) {
@@ -284,7 +324,18 @@ const App: React.FC = () => {
           {!isRegistering ? (
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-3">
-                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">Introduzir PIN</label>
+                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">Telemóvel</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="84..."
+                  className="w-full p-6 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-3xl font-black text-xl focus:border-green-600 text-slate-950 dark:text-white outline-none"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">PIN de Acesso</label>
                 <input
                   type="password"
                   inputMode="numeric"
@@ -299,7 +350,7 @@ const App: React.FC = () => {
 
               <button
                 type="submit"
-                disabled={validating || pin.length < 4}
+                disabled={validating || pin.length < 4 || !phone}
                 className="w-full py-6 rounded-3xl shadow-xl shadow-green-600/10 text-lg font-black text-white bg-green-600 hover:bg-green-700 active:scale-95 transition-all"
               >
                 {validating ? <RefreshCcw className="animate-spin mx-auto" /> : 'ENTRAR NA CONTA'}
@@ -325,9 +376,43 @@ const App: React.FC = () => {
                   className="w-full p-6 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-3xl font-black text-xl focus:border-green-600 text-slate-950 dark:text-white outline-none"
                 />
               </div>
+              <div className="space-y-3">
+                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">Seu Telemóvel</label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={regPhone}
+                  onChange={(e) => setRegPhone(e.target.value)}
+                  placeholder="84..."
+                  className="w-full p-6 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-3xl font-black text-xl focus:border-green-600 text-slate-950 dark:text-white outline-none"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">Crie um PIN (4 dígitos)</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={regPin}
+                  onChange={(e) => setRegPin(e.target.value)}
+                  placeholder="----"
+                  maxLength={6}
+                  className="w-full p-6 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-3xl font-black text-xl focus:border-green-600 text-slate-950 dark:text-white outline-none text-center tracking-[0.5em]"
+                />
+              </div>
+              <div className="space-y-3">
+                <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em] ml-1">Código de Convite</label>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Código..."
+                  className="w-full p-6 bg-white dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800 rounded-3xl font-black text-xl focus:border-green-600 text-slate-950 dark:text-white outline-none"
+                />
+              </div>
+              {loginError && <p className="text-red-500 text-sm text-center font-bold">{loginError}</p>}
               <button
                 type="submit"
-                disabled={loading || !newBusinessName.trim()}
+                disabled={loading || !newBusinessName.trim() || !regPhone || !regPin}
                 className="w-full py-6 rounded-3xl shadow-xl shadow-green-600/10 text-lg font-black text-white bg-green-600 hover:bg-green-700 active:scale-95 transition-all"
               >
                 {loading ? <RefreshCcw className="animate-spin mx-auto" /> : 'REGISTAR NEGÓCIO'}
@@ -359,6 +444,25 @@ const App: React.FC = () => {
 
   return (
     <Layout activeTab={activeTab} onNavigate={setActiveTab} onLogout={handleLogout} isDark={darkMode} onToggleTheme={toggleTheme}>
+      {isTrialExpired && (
+        <div className="fixed inset-0 bg-slate-950 z-[100] flex items-center justify-center p-8 text-center">
+          <div className="max-w-md space-y-8">
+            <div className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center mx-auto animate-pulse">
+              <X size={48} className="text-white" />
+            </div>
+            <h2 className="text-4xl font-black text-white">Período de Teste Expirado</h2>
+            <p className="text-slate-400 text-lg">Seus 3 dias grátis acabaram. Para continuar usando e não perder seus dados, faça o pagamento.</p>
+            <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800">
+              <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-2">M-Pesa para</p>
+              <p className="text-3xl font-black text-white">84 123 4567</p>
+              <p className="text-sm text-slate-400 mt-2">Envie o comprovativo no WhatsApp</p>
+            </div>
+            <button onClick={() => window.open('https://wa.me/258841234567', '_blank')} className="w-full py-6 bg-green-600 text-white rounded-3xl font-black text-xl shadow-xl hover:bg-green-700 transition-all">
+              ENVIAR COMPROVATIVO
+            </button>
+          </div>
+        </div>
+      )}
       {activeTab === 'resumo' && (
         <div className="space-y-6 page-transition">
           <header className="flex justify-between items-center">

@@ -2,38 +2,41 @@
 import { createClient } from '@supabase/supabase-js';
 import { Sale, Customer, Profile } from '../types';
 
-const supabaseUrl = 'https://dfmtoysfvsmcoaosicky.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmbXRveXNmdnNtY29hb3NpY2t5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY2MzAxMTUsImV4cCI6MjA4MjIwNjExNX0.TInj5oUuV_yU1n8AOnqNYbEdOxU6vZr2dPkuhlZuubY';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://dfmtoysfvsmcoaosicky.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmbXRveXNmdnNtY29hb3NpY2t5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY2MzAxMTUsImV4cCI6MjA4MjIwNjExNX0.TInj5oUuV_yU1n8AOnqNYbEdOxU6vZr2dPkuhlZuubY';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const db = {
-  async getProfileByPin(pin: string) {
+  async login(phone: string, pin: string) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('pin', pin);
+      .eq('phone', phone)
+      .eq('pin', pin)
+      .single();
 
-    if (error || !data || data.length === 0) {
-      if (pin === '123456') {
-        const { data: latest } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('id', { ascending: false })
-          .limit(1);
-        return latest && latest.length > 0 ? latest[0] as Profile : null;
-      }
-      return null;
-    }
-
-    return data[0] as Profile;
+    if (error || !data) return null;
+    return data as Profile;
   },
 
-  async createProfile(businessName: string) {
-    const pin = '123456';
+  async checkPhoneExists(phone: string) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('phone', phone);
+    return data && data.length > 0;
+  },
+
+  async createProfile(businessName: string, phone: string, pin: string) {
     const { data, error } = await supabase
       .from('profiles')
-      .insert({ business_name: businessName, pin })
+      .insert({
+        business_name: businessName,
+        phone,
+        pin,
+        status: 'trial'
+      })
       .select()
       .single();
 

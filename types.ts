@@ -5,6 +5,9 @@ export interface Profile {
   id: string;
   business_name: string;
   pin: string;
+  phone: string;
+  status: 'trial' | 'active' | 'blocked';
+  created_at: string;
 }
 
 export interface Customer {
